@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wallpaper xmlns:android="http://schemas.android.com/apk/res/android"
+  android:description="@string/description"
+  android:author="@string/author"
+  android:thumbnail="@drawable/icon"
+/>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+      package="idv.Zero.CameraPaper"
+      android:versionCode="1"
+      android:versionName="1.0">
+    <application android:icon="@drawable/icon" android:label="@string/app_name" android:permission="android.permission.BIND_WALLPAPER">
+      <service android:name=".CameraPaperService">
+        <intent-filter>
+          <action android:name="android.service.wallpaper.WallpaperService" />
+        </intent-filter>
+        <meta-data android:name="android.service.wallpaper" android:resource="@xml/wallpaper"/>
+      </service>
+    </application>
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-sdk android:minSdkVersion="7" />
+</manifest> 
