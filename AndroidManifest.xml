@@ -10,6 +10,11 @@
         </intent-filter>
         <meta-data android:name="android.service.wallpaper" android:resource="@xml/wallpaper"/>
       </service>
+      <activity android:name=".CameraPaperSettings">
+      	<intent-filter>
+      		<action android:name="android.intent.action.MAIN" />
+      	</intent-filter>
+      </activity>
     </application>
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-sdk android:minSdkVersion="7" />

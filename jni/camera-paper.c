@@ -7,7 +7,7 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 // RGB amount ( 30 for each )
-#define RGB_DARK_THRESHOLD 150
+#define RGB_DARK_THRESHOLD 30
 
 jint JNI_OnLoad(JavaVM *vm, void *reserved)
 {
@@ -19,7 +19,7 @@ Java_idv_Zero_CameraPaper_CameraPaperService_00024CameraPaperEngine_nativeDecode
                                                   jobject thiz, jobject jfg, jint width, jint height )
 {
   int size = width * height;
-  int hw = width / 2, hh = height / 2;
+  int hw = width, hh = height;
   int ns = hw * hh;
   
   jbyte *fg = ((jbyte*)(*env)->GetDirectBufferAddress(env, jfg));
@@ -29,7 +29,7 @@ Java_idv_Zero_CameraPaper_CameraPaperService_00024CameraPaperEngine_nativeDecode
   int Y, Cr=0, Cb=0;
   int darkRegion = 0;
   
-  for(j=1;j<height;j+=2)
+  for(j=1;j<height;j++)
   {
     int pixPtr = j * width;
     int jDiv2 = j >> 1;
@@ -71,10 +71,10 @@ Java_idv_Zero_CameraPaper_CameraPaperService_00024CameraPaperEngine_nativeDecode
       else if (B > 255)
         B = 255;
         
-      if ((R + G + B) < RGB_DARK_THRESHOLD)
+      if (R < RGB_DARK_THRESHOLD && G < RGB_DARK_THRESHOLD && B < RGB_DARK_THRESHOLD)
         darkRegion++;
 
-      out[(i / 2) * hh + (hh - j / 2 - 1)] = 0xff000000 + (B << 16) + (G << 8) + R;
+      out[i * hh + (hh - j - 1)] = 0xff000000 + (B << 16) + (G << 8) + R;
       pixPtr++;
     }
   }

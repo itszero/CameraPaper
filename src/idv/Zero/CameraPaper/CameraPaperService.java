@@ -1,4 +1,4 @@
-package idv.Zero.CameraPaper;
+	package idv.Zero.CameraPaper;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -298,7 +298,7 @@ public class CameraPaperService extends WallpaperService {
 				tp.setColor(Color.WHITE);
 				tp.setTextSize(30);
 				double cofTime = (double) ((System.currentTimeMillis() - startTime) / 1000.0);
-				cv.drawText(String.format("%d rfps, %d dfps, %d cfps", (int)(frames / cofTime), (int)(decodeframes / cofTime), (int)(camframes / cofTime)), 20, 200, tp);
+				// cv.drawText(String.format("%d rfps, %d dfps, %d cfps %s", (int)(frames / cofTime), (int)(decodeframes / cofTime), (int)(camframes / cofTime), (firstDarkDetection > 0 ? "PRE-DARK" : "")), 20, 200, tp);
 				
 				if (cofTime > 5)
 				{
@@ -344,7 +344,7 @@ public class CameraPaperService extends WallpaperService {
 		}
 
 		private void deregisterShakeDetector() {
-			if (sensorShakeEventListener != null)
+			if (sm != null && sensorShakeEventListener != null)
 				sm.unregisterListener(sensorShakeEventListener);
 		}
 
@@ -363,19 +363,19 @@ public class CameraPaperService extends WallpaperService {
 
 					waitingNextPreviewFrame = false;
 					int[] out = decodeYUVAndRotate(previewBuffer, camPreviewSize.x, camPreviewSize.y);
-					bmpCache = Bitmap.createBitmap(out, camPreviewSize.y / 2, camPreviewSize.x / 2, Bitmap.Config.ARGB_8888);
+					bmpCache = Bitmap.createBitmap(out, camPreviewSize.y, camPreviewSize.x, Bitmap.Config.ARGB_8888);
 					waitingNextPreviewFrame = true;
 					decodeframes++;
 					
 					// I use the last element of out indicate it's a dark image or not.
-					if (out[camPreviewSize.y * camPreviewSize.x / 4] == 1 && !pauseMode && !darkMode)
+					if (out[camPreviewSize.y * camPreviewSize.x] == 1 && !pauseMode && !darkMode)
 					{
 						// If we detect DARK MODE, stop camera preview.
 						// and restart if user starts to move the phone.
 						if (firstDarkDetection == 0)
 							firstDarkDetection = System.currentTimeMillis();
 						
-						if (System.currentTimeMillis() - firstDarkDetection > 3000)
+						if (System.currentTimeMillis() - firstDarkDetection > 5000)
 						{
 							darkMode = true;
 							handler.sendMessage(handler.obtainMessage(MSG_SET_VISBILITY, ARG_INVISIBLE, 0));
@@ -390,7 +390,9 @@ public class CameraPaperService extends WallpaperService {
 								registerShakeDetector();
 							}
 						}
-					} // outer if
+					}
+					else
+						firstDarkDetection = 0;
 				} // while(true)
 				Log.i(TAG, "DecodeThread STOP");
 			} // public void run

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PreferenceScreen
+ xmlns:android="http://schemas.android.com/apk/res/android"
+ android:title="@string/pref_title"
+ android:key="camerapaper_settings">
+
+	<ListPreference
+		android:key="resolution"
+		android:title="@string/resolution_title"
+		android:summary="@string/resolution_summary"
+		android:dialogTitle="@string/resolution_title"
+		android:entries="@array/resolutions"
+		android:entryValues="@array/resolutions_values">
+	</ListPreference>
+
+</PreferenceScreen>

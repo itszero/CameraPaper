@@ -5,17 +5,19 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.os.Handler;
-import android.util.Log;
 
 class SensorShakeEventListener implements SensorEventListener {
-	private final String TAG = "SensorShakeEventListener";
-	
 	private float lastX = 0, lastY = 0, lastZ = 0;
 	private long timestamp = 0;
 	private Handler handler;
 	private final int MOTION_DETECT_THRESHOLD = 300;
 	
 	public SensorShakeEventListener(Handler _handler)
+	{
+		handler = _handler;
+	}
+	
+	public void setHandler(Handler _handler)
 	{
 		handler = _handler;
 	}
@@ -44,7 +46,7 @@ class SensorShakeEventListener implements SensorEventListener {
 		lastZ = event.values[2];
 				
 		float speed = (float) ((dX + dY + dZ) / dT * 10000 * 10000 * 10000);
-		if (speed > MOTION_DETECT_THRESHOLD && speed < MOTION_DETECT_THRESHOLD * 10)
+		if (speed > MOTION_DETECT_THRESHOLD && speed < MOTION_DETECT_THRESHOLD * 10 && handler != null)
 			handler.sendMessage(handler.obtainMessage(CameraPaperEngine.MSG_WAKE_FROM_SHAKE, CameraPaperEngine.ARG_VISIBLE, 0));
 	}
 			
