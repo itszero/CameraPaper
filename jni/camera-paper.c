@@ -19,11 +19,9 @@ Java_idv_Zero_CameraPaper_CameraPaperService_00024CameraPaperEngine_nativeDecode
                                                   jobject thiz, jobject jfg, jint width, jint height )
 {
   int size = width * height;
-  int hw = width, hh = height;
-  int ns = hw * hh;
   
   jbyte *fg = ((jbyte*)(*env)->GetDirectBufferAddress(env, jfg));
-  jint *out = (jint*)malloc((ns + 1) * sizeof(jint));
+  jint *out = (jint*)malloc((size + 1) * sizeof(jint));
 
   int i, j;
   int Y, Cr=0, Cb=0;
@@ -74,18 +72,18 @@ Java_idv_Zero_CameraPaper_CameraPaperService_00024CameraPaperEngine_nativeDecode
       if (R < RGB_DARK_THRESHOLD && G < RGB_DARK_THRESHOLD && B < RGB_DARK_THRESHOLD)
         darkRegion++;
 
-      out[i * hh + (hh - j - 1)] = 0xff000000 + (B << 16) + (G << 8) + R;
+      out[i * height + (height - j - 1)] = 0xff000000 + (B << 16) + (G << 8) + R;
       pixPtr++;
     }
   }
   
-  if (darkRegion >= (double)ns * 0.8)
-    out[ns] = 1;
+  if (darkRegion >= (double)size * 0.8)
+    out[size] = 1;
   else
-    out[ns] = 0;
+    out[size] = 0;
   
-  jintArray jout = (*env)->NewIntArray(env, ns+1);
-  (*env)->SetIntArrayRegion(env, jout, 0, ns+1, out);
+  jintArray jout = (*env)->NewIntArray(env, size+1);
+  (*env)->SetIntArrayRegion(env, jout, 0, size+1, out);
   free(out);
 
   return jout;

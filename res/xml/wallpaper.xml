@@ -3,4 +3,5 @@
   android:description="@string/description"
   android:author="@string/author"
   android:thumbnail="@drawable/icon"
+  android:settingsActivity="idv.Zero.CameraPaper.CameraPaperSettings"
 />

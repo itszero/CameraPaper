@@ -1,9 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+<!-- Application Info -->
     <string name="app_name">CameraPaper</string>
     <string name="description">真正的  &quot;Live&quot; 桌布體驗！</string>
     <string name="author">itsZero (itszero at gmail dot com)</string>
-    <string name="resolution_title">預覽解析度</string>
-    <string name="resolution_summary">效能或是品質？</string>
+<!-- Preferences Screen -->    
     <string name="pref_title">偏好設定</string>
+    
+    <string name="category_ui">介面設定</string>
+    <string name="resolution_title">預覽解析度</string>
+	<string name="use_tap_circle">水波紋特效</string>
+	<string name="use_tap_circle_summary">點擊螢幕時產生水波紋特效</string>
+	
+	<string name="category_capture">拍照設定</string>
+	<string name="capture_method_title">拍照模式</string>
+<!-- Image Capture Notice -->
+	<string name="image_saved">照片儲存完成</string>
+	<string name="capture_failed">拍照失敗！</string>
 </resources>

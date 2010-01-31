@@ -1,9 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+<!-- Application Info -->
     <string name="app_name">CameraPaper</string>
     <string name="description">the &quot;Live&quot; wallpaper</string>
     <string name="author">itsZero (itszero at gmail dot com)</string>
-    <string name="resolution_title">Preview Resolution</string>
-    <string name="resolution_summary">Performance or Quality?</string>
+<!-- Preferences Screen -->    
     <string name="pref_title">Preferences</string>
+    
+    <string name="category_ui">Interface</string>
+    <string name="resolution_title">Preview Resolution</string>
+    <string name="use_tap_circle">Ripple effect</string>
+	<string name="use_tap_circle_summary">Show ripple effect when tapping screen</string>
+	
+	<string name="category_capture">Capture</string>
+	<string name="capture_method_title">Photo Capture Method</string>
+<!-- Image Capture Notice -->
+	<string name="image_saved">Image saved</string>
+	<string name="capture_failed">Capture failed!</string>
 </resources>

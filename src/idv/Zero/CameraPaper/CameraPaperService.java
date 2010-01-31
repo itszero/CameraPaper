@@ -5,22 +5,22 @@ import java.util.ArrayList;
 import java.util.Random;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.Paint;
 import android.graphics.PixelFormat;
 import android.graphics.Point;
 import android.graphics.Rect;
-import android.graphics.Paint.Style;
 import android.hardware.Camera;
 import android.hardware.Sensor;
 import android.hardware.SensorManager;
 import android.os.Handler;
 import android.os.Message;
+import android.preference.PreferenceManager;
 import android.provider.MediaStore;
 import android.service.wallpaper.WallpaperService;
-import android.text.TextPaint;
 import android.util.Log;
 import android.view.Display;
 import android.view.MotionEvent;
@@ -30,20 +30,19 @@ import android.widget.Toast;
 
 public class CameraPaperService extends WallpaperService {
 	
-	private String TAG = "CameraPaperService";
-
+	private static enum CaptureMethod { CAPTURE_SNAP_PREVIEW, CAPTURE_SNAP_JPEG_CB }
+	
 	static {
 		System.loadLibrary("camera-paper");
 	}
 
 	@Override
 	public Engine onCreateEngine() {
-		Log.i(TAG, "onCreateEngine");
 		Engine e = new CameraPaperEngine();
 		return e;
 	}
 
-	public class CameraPaperEngine extends Engine implements Handler.Callback, Camera.PreviewCallback {
+	public class CameraPaperEngine extends Engine implements Handler.Callback, Camera.PreviewCallback, Camera.PictureCallback, Camera.AutoFocusCallback {
 		
 		/* Message handling */
 		private Handler handler = new Handler(this);
@@ -54,11 +53,12 @@ public class CameraPaperService extends WallpaperService {
 		public final static int MSG_UI_DOUBLE_TAP = 0x3;
 		public final static int MSG_UI_TRIPLE_TAP = 0x4;
 		public final static int MSG_WAKE_FROM_SHAKE = 0x5;
+		public final static int MSG_DO_AUTO_FOCUS = 0x6;
 		
 		/* Camera */
 		private Camera cam;
 		private ByteBuffer previewBuffer;
-		private Point screenSize, camPreviewSize;
+		private Point screenSize;
 		private Bitmap bmpCache;
 		private boolean darkMode = false;
 		private boolean pauseMode = false;
@@ -72,6 +72,11 @@ public class CameraPaperService extends WallpaperService {
 		private SensorManager sm = (SensorManager)CameraPaperService.this.getSystemService(Context.SENSOR_SERVICE);
 		private SensorShakeEventListener sensorShakeEventListener;
 		private ArrayList<Indicator> lstIndicators = new ArrayList<Indicator>();
+		
+		/* Settings */
+		private Point camPreviewSize;
+		private boolean useTapCircleIndicator;
+		private CaptureMethod camCaptureMethod;
 		
 		private String TAG = "CameraPaperService";		
 		
@@ -89,8 +94,11 @@ public class CameraPaperService extends WallpaperService {
         @Override
         public void onTouchEvent(MotionEvent event) {
             if (event.getAction() == MotionEvent.ACTION_DOWN) {
-            	Random rnd = new Random();
-				lstIndicators.add(new IndicatorCircle((int)event.getX(), (int)event.getY(), 2000, Color.argb(255, 255 - rnd.nextInt(125), 255 - rnd.nextInt(125), 255 - rnd.nextInt(125))));
+            	if (useTapCircleIndicator)
+            	{
+            		Random rnd = new Random();
+            		lstIndicators.add(new IndicatorCircle((int)event.getX(), (int)event.getY(), 2000, Color.argb(255, 255 - rnd.nextInt(125), 255 - rnd.nextInt(125), 255 - rnd.nextInt(125))));
+            	}
 
 				if (lastTouchPoint == null) lastTouchPoint = new Point((int)event.getX(), (int)event.getY());
 				if ( (event.getX() - lastTouchPoint.x) > screenSize.x / 15 ||
@@ -122,8 +130,8 @@ public class CameraPaperService extends WallpaperService {
 		public void onVisibilityChanged(boolean visible)
 		{
 			super.onVisibilityChanged(visible);
-			Log.i(TAG, "onVisibilityChanged(" + Boolean.toString(visible) + ")");
 			handler.removeMessages(MSG_SET_VISBILITY);
+			reloadSettings();
 			
 			if (visible)
 				handler.sendMessage(handler.obtainMessage(MSG_SET_VISBILITY, ARG_VISIBLE, 0));
@@ -131,8 +139,7 @@ public class CameraPaperService extends WallpaperService {
 				handler.sendMessage(handler.obtainMessage(MSG_SET_VISBILITY, ARG_INVISIBLE, 0));
 		}
 		
-		public void onDestroy()
-		{
+		public void onDestroy() {
 			super.onDestroy();
 			decoderThread.interrupt();
 			
@@ -143,16 +150,16 @@ public class CameraPaperService extends WallpaperService {
 			handler.removeMessages(MSG_DRAW_FRAMES);
 			handler = null;
 			
-			if (bmpCache != null)
-				bmpCache.recycle();
-			
-			previewBuffer.clear();
-			
 			lstIndicators.clear();
 			lstIndicators = null;
+			
+			if (bmpCache != null)
+			{
+				bmpCache.recycle();
+				bmpCache = null;
+			}
 		}
 		
-		private long startTime = System.currentTimeMillis(), frames = 0, decodeframes = 0;
 		/* Message handling methods */
 		@Override
 		public boolean handleMessage(Message msg) {
@@ -170,7 +177,6 @@ public class CameraPaperService extends WallpaperService {
             	lstIndicators.add(new IndicatorRectangle(new Rect(0, 0, screenSize.x, screenSize.y), Color.WHITE, 500));
 				break;
 			case MSG_DRAW_FRAMES:
-				frames++;
 				drawFrame();
 				break;
 			case MSG_SET_VISBILITY:
@@ -181,6 +187,11 @@ public class CameraPaperService extends WallpaperService {
 				resetDarkModeDetector();
 				if (!pauseMode)
 					handler.sendMessage(handler.obtainMessage(MSG_SET_VISBILITY, ARG_VISIBLE, 0));
+				break;
+			case MSG_DO_AUTO_FOCUS:
+				handler.removeMessages(MSG_DO_AUTO_FOCUS);
+				if (cam != null)
+					cam.autoFocus(this);
 				break;
 			}
 			return false;
@@ -200,24 +211,10 @@ public class CameraPaperService extends WallpaperService {
 			}
 		}
 		
-		private void doSnap() {
-			Log.i(TAG, "Snap current image");
-			try {
-				long currentTime = System.currentTimeMillis();
-				String name = currentTime + "-campaper.jpg";
-				
-				if (MediaStore.Images.Media.insertImage(getContentResolver(), bmpCache, name, name) != null)
-					Toast.makeText(CameraPaperService.this, "Image saved!", Toast.LENGTH_SHORT).show();
-				else
-					Toast.makeText(CameraPaperService.this, "Capture failed.", Toast.LENGTH_SHORT).show();
-			}
-			catch (Exception e) { e.printStackTrace(); }
-		}
-		
 		private void updateVisiblity(Message msg) {
 			try
 			{
-				if (msg.arg1 == 0)
+				if (msg.arg1 == 0) // INVISIBLE
 				{
 					Log.i(TAG, "Stop Preview, Close Camera");
 					if (cam != null)
@@ -230,8 +227,10 @@ public class CameraPaperService extends WallpaperService {
 					
 					if (decoderThread.isAlive() && !decoderThread.isInterrupted())
 						decoderThread.interrupt();
+					
+					previewBuffer.clear();
 				}
-				else
+				else // VISIBLE
 				{
 					Log.i(TAG, "Open Camera, Start Preview");
 					firstDarkDetection = 0;
@@ -260,10 +259,8 @@ public class CameraPaperService extends WallpaperService {
 		}
 
 		/* Camera preview delegate callback */
-		private long camframes = 0;
 		@Override
 		public void onPreviewFrame(byte[] data, Camera camera) {
-			camframes++;
 			if (waitingNextPreviewFrame)
 			{
 				previewBuffer.rewind();
@@ -272,6 +269,52 @@ public class CameraPaperService extends WallpaperService {
 			}
 		}
 
+		/* Take picture */
+		private void doSnap() {
+			Log.i(TAG, "Snap current image");
+			if (cam != null && !pauseMode && !darkMode)
+			{
+				try {
+					handler.sendEmptyMessage(MSG_DO_AUTO_FOCUS);
+				}
+				catch (Exception e) { e.printStackTrace(); }
+			}
+		}
+		
+		@Override
+		public void onAutoFocus(boolean success, Camera camera) {
+			if (camCaptureMethod == CaptureMethod.CAPTURE_SNAP_JPEG_CB)
+				cam.takePicture(null, null, this);
+			else
+			{
+				long currentTime = System.currentTimeMillis();
+				String name = currentTime + "-campaper.jpg";
+				
+				if (MediaStore.Images.Media.insertImage(getContentResolver(), bmpCache, name, name) != null)
+					Toast.makeText(CameraPaperService.this, R.string.image_saved, Toast.LENGTH_SHORT).show();
+				else
+					Toast.makeText(CameraPaperService.this, R.string.capture_failed, Toast.LENGTH_SHORT).show();
+				
+				cam.startPreview();
+			}
+		}
+		
+		/* Camera picture delegate callback */
+		@Override
+		public void onPictureTaken(byte[] data, Camera camera) {
+			long currentTime = System.currentTimeMillis();
+			String name = currentTime + "-campaper.jpg";
+			
+			Bitmap bmpSnap = BitmapFactory.decodeByteArray(data, 0, data.length);
+			
+			if (MediaStore.Images.Media.insertImage(getContentResolver(), bmpSnap, name, name) != null)
+				Toast.makeText(CameraPaperService.this, R.string.image_saved, Toast.LENGTH_SHORT).show();
+			else
+				Toast.makeText(CameraPaperService.this, R.string.capture_failed, Toast.LENGTH_SHORT).show();
+			
+			cam.startPreview();
+		}
+		
 		@SuppressWarnings("unchecked")
 		private void drawFrame() {
 			handler.removeMessages(MSG_DRAW_FRAMES);
@@ -293,19 +336,6 @@ public class CameraPaperService extends WallpaperService {
 					
 					if (pauseMode)
 						cv.drawColor(Color.argb(125, 0, 0, 0));
-				}
-				TextPaint tp = new TextPaint();
-				tp.setColor(Color.WHITE);
-				tp.setTextSize(30);
-				double cofTime = (double) ((System.currentTimeMillis() - startTime) / 1000.0);
-				// cv.drawText(String.format("%d rfps, %d dfps, %d cfps %s", (int)(frames / cofTime), (int)(decodeframes / cofTime), (int)(camframes / cofTime), (firstDarkDetection > 0 ? "PRE-DARK" : "")), 20, 200, tp);
-				
-				if (cofTime > 5)
-				{
-					frames = 0;
-					decodeframes = 0;
-					camframes = 0;
-					startTime = System.currentTimeMillis();
 				}
 				
 				ArrayList<Indicator> lstIndicatorsCopy = (ArrayList<Indicator>) lstIndicators.clone();
@@ -365,8 +395,7 @@ public class CameraPaperService extends WallpaperService {
 					int[] out = decodeYUVAndRotate(previewBuffer, camPreviewSize.x, camPreviewSize.y);
 					bmpCache = Bitmap.createBitmap(out, camPreviewSize.y, camPreviewSize.x, Bitmap.Config.ARGB_8888);
 					waitingNextPreviewFrame = true;
-					decodeframes++;
-					
+										
 					// I use the last element of out indicate it's a dark image or not.
 					if (out[camPreviewSize.y * camPreviewSize.x] == 1 && !pauseMode && !darkMode)
 					{
@@ -409,12 +438,16 @@ public class CameraPaperService extends WallpaperService {
 		    parameters.setPreviewFormat(PixelFormat.YCbCr_422_SP);
 		    Log.i(TAG, "Default preview format: " + previewFormatString);
 
-		    // need to swap the orientation
 		    camPreviewSize = new Point();
 		    camPreviewSize.x = (screenSize.y >> 3) << 3;
 		    camPreviewSize.y = (screenSize.x >> 3) << 3;
 		    Log.i(TAG, "Setting preview size: " + camPreviewSize.x + ", " + camPreviewSize.y);
 		    parameters.setPreviewSize(camPreviewSize.x, camPreviewSize.y);
+		    if (previewBuffer != null)
+		    {
+		    	previewBuffer.clear();
+		    	previewBuffer = null;
+		    }
 		    previewBuffer = ByteBuffer.allocateDirect(camPreviewSize.x * camPreviewSize.y * 3 / 2);
 		    
 		    // FIXME: This is a hack to turn the flash off on the Samsung Galaxy.
@@ -423,6 +456,10 @@ public class CameraPaperService extends WallpaperService {
 		    // This is the standard setting to turn the flash off that all devices should honor.
 		    parameters.set("flash-mode", "off");
 		    
+		    parameters.setPictureFormat(PixelFormat.JPEG);
+		    parameters.setRotation(90);
+		    parameters.setFocusMode(Camera.Parameters.FOCUS_MODE_AUTO);
+		    
 		    cam.setParameters(parameters);
 		    cam.setPreviewCallback(this);
 		}
@@ -430,8 +467,8 @@ public class CameraPaperService extends WallpaperService {
 		/* YUV decoding */
 		
 		// decode Y, U, and V values on the YUV 420 buffer described as YCbCr_422_SP by Android 
-		// David Manpearl 081201 
-		private int[] decodeYUVAndRotate(ByteBuffer fg,int width, int height) throws NullPointerException, IllegalArgumentException { 
+		// David Manpearl 081201 (ported to C code by Zero)
+		private int[] decodeYUVAndRotate(ByteBuffer fg, int width, int height) throws NullPointerException, IllegalArgumentException { 
 	        final int sz = width * height; 
 	        if(fg == null) throw new NullPointerException("buffer 'fg' is null"); 
 	        if(fg.capacity() < sz * 3 / 2) throw new IllegalArgumentException("buffer 'fg' size " + fg.capacity() + " < minimum " + sz * 3/ 2); 
@@ -440,61 +477,15 @@ public class CameraPaperService extends WallpaperService {
 		}
 		
 		private native int[] nativeDecodeYUVAndRotate(ByteBuffer fg, int width, int height);
-	}
-
-	/* Indicators (objects on the screen) */
-	private abstract class Indicator {
-		public long startTimestamp = System.currentTimeMillis();
-		public long duration_ms;
 		
-		public abstract void draw(Canvas canvas);
-	}
-	
-	private class IndicatorCircle extends Indicator {
-		public int x, y;
-		public int color;
-		
-		public IndicatorCircle(int ix, int iy, int iduration, int icolor) {
-			x = ix;
-			y = iy;
-			duration_ms = iduration;
-			color = icolor;
+		private void reloadSettings() {
+			SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(CameraPaperService.this);
+			useTapCircleIndicator = prefs.getBoolean("use_tap_circle", true);
+			
+			if (prefs.getString("capture_method", "1").equals("1"))
+				camCaptureMethod = CaptureMethod.CAPTURE_SNAP_PREVIEW;
+			else
+				camCaptureMethod = CaptureMethod.CAPTURE_SNAP_JPEG_CB;			
 		}
-
-		@Override
-		public void draw(Canvas cv) {
-			float dT = System.currentTimeMillis() - startTimestamp;
-			float progress = dT / duration_ms;
-			Paint pCircle = new Paint();
-			pCircle.setColor(color);
-			pCircle.setStyle(Style.STROKE);
-			pCircle.setStrokeWidth(10);
-			pCircle.setAlpha(255 - (int)( 255.0 * progress ));
-			// Expand to 1/8 screen height
-			cv.drawCircle(x, y, (float) (300 * progress), pCircle);
-		}
-	}
-	
-	private class IndicatorRectangle extends Indicator {
-		public Rect rect;
-		public int color;
-		
-		public IndicatorRectangle(Rect iRect, int iColor, int duration)
-		{
-			rect = iRect;
-			color = iColor;
-			duration_ms = duration;
-		}
-		
-		@Override
-		public void draw(Canvas cv) {
-			float dT = System.currentTimeMillis() - startTimestamp;
-			float progress = dT / duration_ms;
-			Paint pRect = new Paint();
-			pRect.setColor(color);
-			pRect.setStyle(Style.FILL);
-			pRect.setAlpha(255 - (int)( 255.0 * progress ));
-			cv.drawRect(rect, pRect);			
-		}
-	}
+	}	
 }

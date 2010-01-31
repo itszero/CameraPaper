@@ -4,13 +4,23 @@
  android:title="@string/pref_title"
  android:key="camerapaper_settings">
 
-	<ListPreference
-		android:key="resolution"
-		android:title="@string/resolution_title"
-		android:summary="@string/resolution_summary"
-		android:dialogTitle="@string/resolution_title"
-		android:entries="@array/resolutions"
-		android:entryValues="@array/resolutions_values">
-	</ListPreference>
+	<PreferenceCategory android:title="@string/category_ui">
+		<CheckBoxPreference
+			android:key="use_tap_circle"
+			android:title="@string/use_tap_circle"
+			android:summary="@string/use_tap_circle_summary"
+			android:defaultValue="true"
+			/>
+	</PreferenceCategory>
 
+	<PreferenceCategory android:title="@string/category_capture">
+		<ListPreference
+			android:key="capture_method"
+			android:title="@string/capture_method_title"
+			android:dialogTitle="@string/capture_method_title"
+			android:entries="@array/capture_methods"
+			android:entryValues="@array/capture_method_values"
+			android:defaultValue="1">
+		</ListPreference>
+	</PreferenceCategory>
 </PreferenceScreen>
