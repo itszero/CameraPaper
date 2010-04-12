@@ -1,4 +1,4 @@
-	package idv.Zero.CameraPaper;
+package idv.Zero.CameraPaper;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -227,9 +227,11 @@ public class CameraPaperService extends WallpaperService {
 					
 					if (decoderThread.isAlive() && !decoderThread.isInterrupted())
 						decoderThread.interrupt();
-					
-					previewBuffer.clear();
-				}
+
+					if (previewBuffer != null)
+						previewBuffer.clear();
+					else
+						previewBuffer = ByteBuffer.allocateDirect(camPreviewSize.x * camPreviewSize.y * 3 / 2);				}
 				else // VISIBLE
 				{
 					Log.i(TAG, "Open Camera, Start Preview");
