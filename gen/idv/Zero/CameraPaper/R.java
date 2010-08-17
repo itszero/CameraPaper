@@ -41,7 +41,6 @@ public final class R {
         public static final int use_tap_circle_summary=0x7f050007;
     }
     public static final class xml {
-        public static final int preferences=0x7f030000;
-        public static final int wallpaper=0x7f030001;
+        public static final int wallpaper=0x7f030000;
     }
 }
