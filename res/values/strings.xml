@@ -14,7 +14,10 @@
 	
 	<string name="category_capture">Capture</string>
 	<string name="capture_method_title">Photo Capture Method</string>
-<!-- Image Capture Notice -->
+<!-- Image Capture Toasts -->
 	<string name="image_saved">Image saved</string>
 	<string name="capture_failed">Capture failed!</string>
+<!-- Video Capture Toasts -->
+	<string name="start_record">Recording...</string>
+	<string name="stop_record">Video saved</string>
 </resources>

@@ -1,41 +1,47 @@
 package idv.Zero.CameraPaper;
 
-import java.nio.ByteBuffer;
+import java.io.File;
+import java.io.IOException;
 
+import android.appwidget.AppWidgetManager;
+import android.content.BroadcastReceiver;
+import android.content.ComponentName;
+import android.content.ContentValues;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.PixelFormat;
 import android.graphics.Point;
 import android.hardware.Camera;
-import android.hardware.Sensor;
-import android.hardware.SensorManager;
+import android.media.CamcorderProfile;
+import android.media.MediaRecorder;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Message;
 import android.provider.MediaStore;
+import android.provider.MediaStore.Video;
 import android.service.wallpaper.WallpaperService;
 import android.util.Log;
 import android.view.Display;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.WindowManager;
+import android.widget.RemoteViews;
 import android.widget.Toast;
 
 public class CameraPaperService extends WallpaperService {
+	public static String ACTION_TOGGLE_VIDEO_RECORD = "idv.Zero.CameraPaper.action.TOGGLE_VIDEO_RECORD";
+	public Engine e;
 	
-	private static enum CaptureMethod { CAPTURE_SNAP_PREVIEW, CAPTURE_SNAP_JPEG_CB }
-	
-	static {
-		System.loadLibrary("camera-paper");
-	}
-
 	@Override
 	public Engine onCreateEngine() {
-		Engine e = new CameraPaperEngine();
+		e = new CameraPaperEngine();
 		return e;
 	}
 
-	public class CameraPaperEngine extends Engine implements Handler.Callback, Camera.PreviewCallback, Camera.PictureCallback, Camera.AutoFocusCallback {
+	public class CameraPaperEngine extends Engine implements Handler.Callback, Camera.PictureCallback, Camera.AutoFocusCallback {
 		
 		/* Message handling */
 		private Handler handler = new Handler(this);
@@ -50,34 +56,26 @@ public class CameraPaperService extends WallpaperService {
 		
 		/* Camera */
 		private Camera cam;
-		private ByteBuffer previewBuffer;
 		private Point screenSize;
 		private Bitmap bmpCache;
-		private boolean darkMode = false;
 		private boolean pauseMode = false;
 
 		/* UI */
 		private final int SIMUTANEOUS_TAP_THRESHOLD = 400;
-		private long lastTouchDownTime, firstDarkDetection = 0;
+		private long lastTouchDownTime;
 		private Point lastTouchPoint;
 		private boolean cancelNextDoubleTap = false;
 		private int simutaneousTouchCount = 0;
-		private SensorManager sm = (SensorManager)CameraPaperService.this.getSystemService(Context.SENSOR_SERVICE);
-		private SensorShakeEventListener sensorShakeEventListener;
 		
 		/* Settings */
 		private Point camPreviewSize;
-		private boolean useTapCircleIndicator;
-		private CaptureMethod camCaptureMethod;
-		
 		private String TAG = "CameraPaperService";		
 		
 		public void onCreate(SurfaceHolder surfaceHolder)
 		{
 			super.onCreate(surfaceHolder);
-			setTouchEventsEnabled(true);
-			decoderThread.start();
 			surfaceHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
+			setTouchEventsEnabled(true);
 			
 			WindowManager manager = (WindowManager)CameraPaperService.this.getSystemService(Context.WINDOW_SERVICE);
 		    Display display = manager.getDefaultDisplay();
@@ -127,10 +125,6 @@ public class CameraPaperService extends WallpaperService {
 		
 		public void onDestroy() {
 			super.onDestroy();
-			decoderThread.interrupt();
-			
-			deregisterShakeDetector();
-			sm = null;
 			
 			handler.removeMessages(MSG_SET_VISBILITY);
 			handler.removeMessages(MSG_DRAW_FRAMES);
@@ -154,15 +148,13 @@ public class CameraPaperService extends WallpaperService {
 				else
 					handleDoubleTap(msg);
 				break;
-			case MSG_UI_TRIPLE_TAP:	
+			case MSG_UI_TRIPLE_TAP:
             	doSnap();
 				break;
 			case MSG_SET_VISBILITY:
 				updateVisiblity(msg);
 				break;
 			case MSG_WAKE_FROM_SHAKE:
-				deregisterShakeDetector();
-				resetDarkModeDetector();
 				if (!pauseMode)
 					handler.sendMessage(handler.obtainMessage(MSG_SET_VISBILITY, ARG_VISIBLE, 0));
 				break;
@@ -184,7 +176,6 @@ public class CameraPaperService extends WallpaperService {
 			else
 			{
 				pauseMode = true;
-				resetDarkModeDetector();
 				handler.sendMessage(handler.obtainMessage(MSG_SET_VISBILITY, ARG_INVISIBLE, 0));
 			}
 		}
@@ -194,6 +185,12 @@ public class CameraPaperService extends WallpaperService {
 			{
 				if (msg.arg1 == 0) // INVISIBLE
 				{
+					try
+					{
+						unregisterReceiver(mReceiver);
+					}
+					catch (Exception e) {}
+					
 					Log.i(TAG, "Stop Preview, Close Camera");
 					if (cam != null)
 					{
@@ -202,30 +199,21 @@ public class CameraPaperService extends WallpaperService {
 						cam.release();
 					}
 					cam = null;
-					
-					if (decoderThread.isAlive() && !decoderThread.isInterrupted())
-						decoderThread.interrupt();
-
-					if (previewBuffer != null)
-						previewBuffer.clear();
-					else
-						previewBuffer = ByteBuffer.allocateDirect(camPreviewSize.x * camPreviewSize.y * 3 / 2);				}
+				}
 				else // VISIBLE
 				{
 					Log.i(TAG, "Open Camera, Start Preview");
-					firstDarkDetection = 0;
-					
+
 					if (cam == null)
 						cam = Camera.open();
 					
-					setCameraParameters();
+					setCameraParameters(90, null);
 					cam.startPreview();
 					
-					if (decoderThread.isAlive() && !decoderThread.isInterrupted())
-						decoderThread.interrupt();
+					IntentFilter infilter = new IntentFilter();
+					infilter.addAction(ACTION_TOGGLE_VIDEO_RECORD);
+					registerReceiver(mReceiver, infilter);
 					
-					decoderThread = new Thread(decoderRunnable);
-					decoderThread.start();
 					handler.sendEmptyMessage(MSG_DRAW_FRAMES);
 				}
 			}
@@ -238,21 +226,10 @@ public class CameraPaperService extends WallpaperService {
 			}
 		}
 
-		/* Camera preview delegate callback */
-		@Override
-		public void onPreviewFrame(byte[] data, Camera camera) {
-			if (waitingNextPreviewFrame)
-			{
-				previewBuffer.rewind();
-				previewBuffer.put(data);
-				waitingNextPreviewFrame = false;
-			}
-		}
-
 		/* Take picture */
 		private void doSnap() {
 			Log.i(TAG, "Snap current image");
-			if (cam != null && !pauseMode && !darkMode)
+			if (cam != null && !pauseMode)
 			{
 				try {
 					handler.sendEmptyMessage(MSG_DO_AUTO_FOCUS);
@@ -281,88 +258,9 @@ public class CameraPaperService extends WallpaperService {
 			
 			cam.startPreview();
 		}
-		
-		/* Helpers */
-		private void resetDarkModeDetector() {
-			darkMode = false;
-			firstDarkDetection = 0;
-			deregisterShakeDetector();
-		}
 
-
-		private void registerShakeDetector() {
-			deregisterShakeDetector();
-			sensorShakeEventListener = new SensorShakeEventListener(handler);
-			sm.registerListener(sensorShakeEventListener, sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), SensorManager.SENSOR_DELAY_UI);
-		}
-
-		private void deregisterShakeDetector() {
-			if (sm != null && sensorShakeEventListener != null)
-				sm.unregisterListener(sensorShakeEventListener);
-		}
-
-		/* Decoder thread */
-		private boolean waitingNextPreviewFrame = true;
-		private Runnable decoderRunnable = new Runnable() {
-			@Override
-			public void run() {
-				Log.i(TAG, "DecodeThread START");
-				while(!Thread.currentThread().isInterrupted())
-				{
-					try {
-						Thread.sleep(1000);
-					} catch (InterruptedException e1) {
-						break;
-					}
-					if (previewBuffer == null) continue;
-					
-					if (pauseMode || darkMode) continue;
-					if (waitingNextPreviewFrame) continue;
-
-					waitingNextPreviewFrame = false;
-					int[] out = decodeYUVAndRotate(previewBuffer, camPreviewSize.x, camPreviewSize.y);
-					waitingNextPreviewFrame = true;
-										
-					// I use the last element of out indicate it's a dark image or not.
-					if (out[camPreviewSize.y * camPreviewSize.x] == 1 && !pauseMode && !darkMode)
-					{
-						// If we detect DARK MODE, stop camera preview.
-						// and restart if user starts to move the phone.
-						if (firstDarkDetection == 0)
-							firstDarkDetection = System.currentTimeMillis();
-						
-						if (System.currentTimeMillis() - firstDarkDetection > 5000)
-						{
-							darkMode = true;
-							handler.sendMessage(handler.obtainMessage(MSG_SET_VISBILITY, ARG_INVISIBLE, 0));
-							if (sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) == null) // Provide fallback for phones without G-sensor
-							{
-								Log.i(TAG, "Enter dark mode, device does not support G-sensor. Stop preview for 5 secs.");
-								handler.sendMessage(handler.obtainMessage(MSG_SET_VISBILITY, ARG_VISIBLE, 0));
-							}
-							else
-							{
-								Log.i(TAG, "Enter dark mode, register G-sensor for waking up camera");
-								registerShakeDetector();
-							}
-						}
-					}
-					else
-						firstDarkDetection = 0;
-					
-					try {
-						Thread.sleep(100);
-					} catch (InterruptedException e) {
-						e.printStackTrace();
-					}
-				} // while(true)
-				Log.i(TAG, "DecodeThread STOP");
-			} // public void run
-		};
-		private Thread decoderThread = new Thread(decoderRunnable);
-		
 		/* Camera settings helper */
-		private void setCameraParameters() {
+		private void setCameraParameters(int rotation, CamcorderProfile profile) {
 		    Camera.Parameters parameters = cam.getParameters();
 		    Camera.Size size = parameters.getPreviewSize();
 		    Log.i(TAG, "Default preview size: " + size.width + ", " + size.height);
@@ -371,22 +269,25 @@ public class CameraPaperService extends WallpaperService {
 		    parameters.setPreviewFormat(PixelFormat.YCbCr_422_SP);
 		    Log.i(TAG, "Default preview format: " + previewFormatString);
 		    
-		    cam.setDisplayOrientation(90);
+		    cam.setDisplayOrientation(rotation);
 		    try {
 		    	cam.setPreviewDisplay(this.getSurfaceHolder());
 		    } catch (Exception ex) {}
 
 		    camPreviewSize = new Point();
-		    camPreviewSize.x = (screenSize.y >> 3) << 3;
-		    camPreviewSize.y = (screenSize.x >> 3) << 3;
+		    if (profile == null)
+		    {
+			    camPreviewSize.x = (screenSize.y >> 3) << 3;
+			    camPreviewSize.y = (screenSize.x >> 3) << 3;
+		    }
+		    else
+		    {
+		    	camPreviewSize.x = profile.videoFrameWidth;
+		    	camPreviewSize.y = profile.videoFrameHeight;
+		    	parameters.setPreviewFrameRate(profile.videoFrameRate);
+		    }
 		    Log.i(TAG, "Setting preview size: " + camPreviewSize.x + ", " + camPreviewSize.y);
 		    parameters.setPreviewSize(camPreviewSize.x, camPreviewSize.y);
-		    if (previewBuffer != null)
-		    {
-		    	previewBuffer.clear();
-		    	previewBuffer = null;
-		    }
-		    previewBuffer = ByteBuffer.allocateDirect(camPreviewSize.x * camPreviewSize.y * 3 / 2);
 		    
 		    // FIXME: This is a hack to turn the flash off on the Samsung Galaxy.
 		    parameters.set("flash-value", 2);
@@ -398,21 +299,139 @@ public class CameraPaperService extends WallpaperService {
 		    parameters.setFocusMode(Camera.Parameters.FOCUS_MODE_AUTO);
 		    
 		    cam.setParameters(parameters);
-		    cam.setPreviewCallback(this);
 		}
+		
+		/* Video recording support */
+		private MediaRecorder videoRecorder = null;
+		private ContentValues curVideoContentValues = null;
+		private long vrStart = 0;
 
-		/* YUV decoding */
+		private Runnable widgetUpdateRunnable = new Runnable() {
+			@Override
+			public void run() {
+				while (!Thread.interrupted())
+				{
+					long n = System.currentTimeMillis();
+					long d = (n - vrStart) / 1000;
+					int m = (int) (d / 60);
+					int s = (int) (d % 60);
+					String elapsed = String.format("%02d:%02d", m, s);
+					setWidgetText(elapsed);
+					
+					try {
+						Thread.sleep(500);
+					} catch (InterruptedException e) {
+						break;
+					}
+				}
+				
+				setWidgetText("00:00");
+			}
+			
+			private void setWidgetText(String txt)
+			{
+				Context context = getApplicationContext();
+				AppWidgetManager mWidgetManager = AppWidgetManager.getInstance(context);
+				int[] mWidgetIds = mWidgetManager.getAppWidgetIds(new ComponentName(context, VideoRecorderWidget.class));
+				
+				for (int i : mWidgetIds)
+				{
+					RemoteViews updateViews = new RemoteViews(context.getPackageName(), R.layout.video_recorder_widget);
+					updateViews.setTextViewText(R.id.text_info, txt);
+					mWidgetManager.updateAppWidget(i, updateViews);
+				}
+			}
+		};
+		private Thread thdWidgetUpdater = null;
 		
-		// decode Y, U, and V values on the YUV 420 buffer described as YCbCr_422_SP by Android 
-		// David Manpearl 081201 (ported to C code by Zero)
-		private int[] decodeYUVAndRotate(ByteBuffer fg, int width, int height) throws NullPointerException, IllegalArgumentException { 
-	        final int sz = width * height; 
-	        if(fg == null) throw new NullPointerException("buffer 'fg' is null"); 
-	        if(fg.capacity() < sz * 3 / 2) throw new IllegalArgumentException("buffer 'fg' size " + fg.capacity() + " < minimum " + sz * 3/ 2); 
-	        
-	        return nativeDecodeYUVAndRotate(fg, width, height);
+		private void doVideoRecording() {
+			if (videoRecorder == null)
+			{
+				CamcorderProfile profile = CamcorderProfile.get(CamcorderProfile.QUALITY_HIGH);
+				
+				videoRecorder = new MediaRecorder();
+				cam.stopPreview();
+				cam.release();
+				cam = Camera.open();
+				setCameraParameters(90, profile);
+				cam.startPreview();
+				cam.unlock();
+				videoRecorder.setCamera(cam);
+				videoRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
+				videoRecorder.setVideoSource(MediaRecorder.VideoSource.CAMERA);
+				videoRecorder.setProfile(profile);
+
+				// create video path
+		        long dateTaken = System.currentTimeMillis();
+		        String title = Long.toString(dateTaken);
+		        String fileName = title + ".3gp";
+		        String dirPath = Environment.getExternalStorageDirectory().toString() + "/DCIM/Camera/";
+		        String filePath = dirPath + "/" + fileName;
+		        File cameraDir = new File(dirPath);
+		        cameraDir.mkdirs();
+
+		        ContentValues values = new ContentValues(7);
+		        values.put(Video.Media.TITLE, title);
+		        values.put(Video.Media.DISPLAY_NAME, fileName);
+		        values.put(Video.Media.DESCRIPTION, "");
+		        values.put(Video.Media.DATE_TAKEN, dateTaken);
+		        values.put(Video.Media.MIME_TYPE, "video/3gpp");
+		        values.put(Video.Media.DATA, filePath);
+		        curVideoContentValues = values;
+		        videoRecorder.setOutputFile(filePath);
+		        videoRecorder.setPreviewDisplay(this.getSurfaceHolder().getSurface());
+
+		        try {
+					videoRecorder.prepare();
+				} catch (IllegalStateException e) {
+					e.printStackTrace();
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+				videoRecorder.start();
+				
+				vrStart = System.currentTimeMillis();
+				thdWidgetUpdater = new Thread(widgetUpdateRunnable);
+				thdWidgetUpdater.start();
+				
+				Toast.makeText(CameraPaperService.this, R.string.start_record, Toast.LENGTH_SHORT).show();
+				Log.i(TAG, "Start recording");
+			}
+			else
+			{
+				videoRecorder.stop();
+				videoRecorder.release();
+				videoRecorder = null;
+
+				try {
+					cam.reconnect();
+				} catch (IOException e1) {
+					e1.printStackTrace();
+				}
+				cam.stopPreview();
+				setCameraParameters(90, null);
+				cam.startPreview();
+				
+				getContentResolver().insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, curVideoContentValues);
+				Toast.makeText(CameraPaperService.this, R.string.stop_record, Toast.LENGTH_SHORT).show();
+				
+				thdWidgetUpdater.interrupt();
+				thdWidgetUpdater = null;
+				
+				curVideoContentValues = null;
+				Log.i(TAG, "stop recording");
+			}
 		}
 		
-		private native int[] nativeDecodeYUVAndRotate(ByteBuffer fg, int width, int height);
+		BroadcastReceiver mReceiver = new BroadcastReceiver() {
+			
+			@Override
+			public void onReceive(Context context, Intent intent) {
+				Log.i(TAG, "received broadcast: " + intent.getAction());
+				if (intent.getAction().equals(ACTION_TOGGLE_VIDEO_RECORD))
+					CameraPaperService.CameraPaperEngine.this.doVideoRecording();
+			}
+			
+		};
 	}
 }

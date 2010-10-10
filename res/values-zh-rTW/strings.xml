@@ -14,7 +14,10 @@
 	
 	<string name="category_capture">拍照設定</string>
 	<string name="capture_method_title">拍照模式</string>
-<!-- Image Capture Notice -->
+<!-- Image Capture Toasts -->
 	<string name="image_saved">照片儲存完成</string>
 	<string name="capture_failed">拍照失敗！</string>
+<!-- Video Capture Toasts -->
+	<string name="start_record">開始錄影</string>
+	<string name="stop_record">錄影完成</string>
 </resources>

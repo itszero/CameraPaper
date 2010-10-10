@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+      android:orientation="horizontal"
+      android:layout_gravity="center"
+      android:layout_width="fill_parent"
+      android:layout_height="fill_parent">
+<ImageButton xmlns:android="http://schemas.android.com/apk/res/android"
+	  android:id="@+id/record_button"
+	  android:background="@drawable/record_button"
+	  android:layout_width="wrap_content" android:layout_height="wrap_content"
+	  android:layout_gravity="center_vertical"
+	  android:padding="2dip"
+	/>
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+	  android:id="@+id/text_info"
+	  android:textSize="24dp"
+	  android:text="00:00"
+	  android:padding="2dip"
+	  android:layout_gravity="center_vertical"
+	  android:layout_width="fill_parent" android:layout_height="wrap_content"
+	  android:textColor="#FFFFFFFF"
+	/>
+</LinearLayout>
