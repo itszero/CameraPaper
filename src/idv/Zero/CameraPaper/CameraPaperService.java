@@ -309,6 +309,11 @@ public class CameraPaperService extends WallpaperService {
 				Log.i(TAG, "DecodeThread START");
 				while(!Thread.currentThread().isInterrupted())
 				{
+					try {
+						Thread.sleep(1000);
+					} catch (InterruptedException e1) {
+						break;
+					}
 					if (previewBuffer == null) continue;
 					
 					if (pauseMode || darkMode) continue;
