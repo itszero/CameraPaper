@@ -1,4 +1,4 @@
-package idv.Zero.CameraPaper;
+package idv.Zero.CameraPaperPro;
 
 import android.app.PendingIntent;
 import android.appwidget.AppWidgetManager;

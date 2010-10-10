@@ -1,4 +1,4 @@
-package idv.Zero.CameraPaper;
+package idv.Zero.CameraPaperPro;
 
 import java.io.File;
 import java.io.IOException;
