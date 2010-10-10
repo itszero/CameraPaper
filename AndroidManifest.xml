@@ -24,6 +24,5 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.RECORD_VIDEO"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
-    <uses-permission android:name="android.permission.BIND_WALLPAPER"/>
     <uses-sdk android:minSdkVersion="8"/>
 </manifest> 
